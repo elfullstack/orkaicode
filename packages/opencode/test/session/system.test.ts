@@ -45,11 +45,23 @@ const build: Agent.Info = {
   options: {},
 }
 
+const explore: Agent.Info = {
+  name: "explore",
+  mode: "subagent",
+  permission: Permission.fromConfig({ "*": "allow" }),
+  options: {},
+}
+
 const it = testEffect(
   SystemPrompt.layer.pipe(
     Layer.provide(LocationServiceMap.layer),
     Layer.provide(FSUtil.defaultLayer),
-    Layer.provide(OrkaiContext.defaultLayer),
+    Layer.provide(
+      Layer.mock(OrkaiContext.Service, {
+        get: () => Effect.succeed("### User preferences\n\nFollow verbatim."),
+        refresh: () => Effect.succeed("### User preferences\n\nFollow verbatim."),
+      }),
+    ),
     Layer.provide(
       Layer.mock(Config.Service, {
         get: () => Effect.succeed({}),
@@ -146,6 +158,28 @@ describe("session.system", () => {
           "</mcp_instructions>",
         ].join("\n"),
       )
+    }),
+  )
+
+  it.effect("primary agents receive orkai protocol with prefetched context", () =>
+    Effect.gen(function* () {
+      const prompt = yield* SystemPrompt.Service
+      const output = yield* prompt.orkai(build)
+
+      expect(output).toContain("Orkai Integration — Core Operating Protocol")
+      expect(output).toContain("## Orkai Session Context")
+      expect(output).toContain("### User preferences")
+    }),
+  )
+
+  it.effect("task agents receive lightweight orkai awareness", () =>
+    Effect.gen(function* () {
+      const prompt = yield* SystemPrompt.Service
+      const output = yield* prompt.orkai(explore)
+
+      expect(output).toContain("# Orkai awareness")
+      expect(output).toContain("orkai_search_code")
+      expect(output).not.toContain("Orkai Integration — Core Operating Protocol")
     }),
   )
 })
