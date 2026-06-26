@@ -28,6 +28,7 @@ target
 .direnv/
 
 # Local dev files
+/docs/
 opencode-dev
 UPCOMING_CHANGELOG.md
 logs/
