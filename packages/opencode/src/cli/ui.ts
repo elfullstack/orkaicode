@@ -59,8 +59,8 @@ export function logo(pad?: string) {
   const result: string[] = []
   const reset = "\x1b[0m"
   const left = {
-    fg: "\x1b[90m",
-    shadow: "\x1b[38;5;235m",
+    fg: "\x1b[38;5;214m",
+    shadow: "\x1b[38;5;172m",
     bg: "\x1b[48;5;235m",
   }
   const right = {
