@@ -78,11 +78,19 @@ describe("installation", () => {
   })
 
   describe("upgrade", () => {
-    testEffect(testLayer(() => jsonResponse({}))).effect("refuses upstream self-upgrade paths", () =>
+    testEffect(
+      testLayer((request) => {
+        if (request.url === Distribution.latestReleaseApiUrl) return jsonResponse({ tag_name: "v9.9.9" })
+        if (request.url.includes("/releases/download/")) return new Response(null, { status: 404 })
+        return jsonResponse({})
+      }),
+    ).effect("uses fork GitHub release download URL", () =>
       Effect.gen(function* () {
-        const error = yield* Effect.flip(Installation.use.upgrade("npm", "9.9.9"))
+        const target = Distribution.releaseTarget()
+        if (!target) return
+        const error = yield* Effect.flip(Installation.use.upgrade("unknown", "9.9.9"))
         expect(error).toBeInstanceOf(Installation.UpgradeFailedError)
-        expect(error.stderr).toBe(Distribution.upgradeMessage())
+        expect(error.stderr).toContain(Distribution.releasesUrl)
       }),
     )
   })

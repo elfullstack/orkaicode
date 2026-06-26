@@ -4,8 +4,11 @@ import { Effect, Layer, Schema, Context } from "effect"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+import { errorMessage } from "@/util/error"
 import { ChildProcess } from "effect/unstable/process"
 import { AppProcess } from "@opencode-ai/core/process"
+import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import semver from "semver"
@@ -93,6 +96,124 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
       Effect.catch(() => Effect.succeed("")),
     )
 
+    const run = Effect.fnUntraced(
+      function* (cmd: string[], opts?: { cwd?: string }) {
+        const result = yield* appProcess.run(
+          ChildProcess.make(cmd[0], cmd.slice(1), {
+            cwd: opts?.cwd,
+            extendEnv: true,
+          }),
+        )
+        return {
+          code: result.exitCode,
+          stderr: result.stderr.toString("utf8"),
+        }
+      },
+    )
+
+    const upgradeRelease = Effect.fnUntraced(function* (target: string) {
+      const platform = Distribution.releaseTarget()
+      if (!platform) {
+        return yield* new UpgradeFailedError({ stderr: "Self-update is not supported on this platform." })
+      }
+
+      const url = Distribution.releaseDownloadUrl(target, platform)
+      const tmp = path.join(os.tmpdir(), `opencode-upgrade-${process.pid}`)
+      const archive = path.join(tmp, Distribution.releaseArchiveFilename(platform))
+      const extract = path.join(tmp, "extract")
+
+      yield* Effect.tryPromise({
+        try: () => fs.rm(tmp, { recursive: true, force: true }),
+        catch: () => new UpgradeFailedError({ stderr: "Failed to prepare upgrade directory." }),
+      })
+      yield* Effect.tryPromise({
+        try: () => fs.mkdir(tmp, { recursive: true }),
+        catch: () => new UpgradeFailedError({ stderr: "Failed to create upgrade directory." }),
+      })
+
+      const response = yield* http
+        .execute(HttpClientRequest.get(url))
+        .pipe(
+          Effect.catch((cause) =>
+            Effect.fail(
+              new UpgradeFailedError({
+                stderr: `Failed to download release from ${Distribution.releasesUrl}: ${errorMessage(cause)}`,
+              }),
+            ),
+          ),
+        )
+
+      if (response.status === 404) {
+        return yield* new UpgradeFailedError({
+          stderr: `Release v${target} for ${platform} was not found at ${Distribution.releasesUrl}`,
+        })
+      }
+      if (response.status < 200 || response.status >= 300) {
+        return yield* new UpgradeFailedError({
+          stderr: `Failed to download release (HTTP ${response.status}). See ${Distribution.releasesUrl}`,
+        })
+      }
+
+      const body = yield* response.arrayBuffer.pipe(
+        Effect.catch((cause) =>
+          Effect.fail(new UpgradeFailedError({ stderr: `Failed to read release download: ${errorMessage(cause)}` })),
+        ),
+      )
+
+      yield* Effect.tryPromise({
+        try: () => Bun.write(archive, body),
+        catch: (cause) => new UpgradeFailedError({ stderr: `Failed to save release archive: ${errorMessage(cause)}` }),
+      })
+
+      yield* Effect.tryPromise({
+        try: () => fs.mkdir(extract, { recursive: true }),
+        catch: () => new UpgradeFailedError({ stderr: "Failed to create extract directory." }),
+      })
+
+      const extractCmd =
+        process.platform === "linux"
+          ? (["tar", "-xzf", archive, "-C", extract] as const)
+          : (["unzip", "-q", archive, "-d", extract] as const)
+
+      const extracted = yield* run([...extractCmd]).pipe(
+        Effect.catch((cause) =>
+          Effect.fail(new UpgradeFailedError({ stderr: `Failed to extract release: ${errorMessage(cause)}` })),
+        ),
+      )
+      if (extracted.code !== 0) {
+        return yield* new UpgradeFailedError({
+          stderr: extracted.stderr.trim() || `Failed to extract ${Distribution.releaseArchiveFilename(platform)}`,
+        })
+      }
+
+      const binaryName = process.platform === "win32" ? "opencode.exe" : "opencode"
+      const binary = path.join(extract, binaryName)
+      const exists = yield* Effect.tryPromise({
+        try: () => fs.stat(binary).then(() => true),
+        catch: () => false,
+      })
+      if (!exists) {
+        return yield* new UpgradeFailedError({
+          stderr: `Release archive did not contain ${binaryName}. See ${Distribution.releasesUrl}`,
+        })
+      }
+
+      yield* Effect.tryPromise({
+        try: async () => {
+          await fs.copyFile(binary, process.execPath)
+          await fs.chmod(process.execPath, 0o755)
+        },
+        catch: (cause) =>
+          new UpgradeFailedError({
+            stderr: `Failed to install release to ${process.execPath}: ${errorMessage(cause)}`,
+          }),
+      })
+
+      yield* Effect.tryPromise(() => fs.rm(tmp, { recursive: true, force: true })).pipe(Effect.ignore)
+
+      yield* Effect.logInfo("upgraded", { target, platform, url, execPath: process.execPath })
+    })
+
     const result: Interface = {
       info: Effect.fn("Installation.info")(function* () {
         return {
@@ -141,8 +262,14 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         const data = yield* HttpClientResponse.schemaBodyJson(GitHubRelease)(response)
         return data.tag_name.replace(/^v/, "")
       }, Effect.orDie),
-      upgrade: Effect.fn("Installation.upgrade")(function* () {
-        return yield* new UpgradeFailedError({ stderr: Distribution.upgradeMessage() })
+      upgrade: Effect.fn("Installation.upgrade")(function* (_method: Method, target: string) {
+        yield* upgradeRelease(target).pipe(
+          Effect.catch((cause) =>
+            cause instanceof UpgradeFailedError
+              ? Effect.fail(cause)
+              : Effect.fail(new UpgradeFailedError({ stderr: errorMessage(cause) })),
+          ),
+        )
       }),
     }
 

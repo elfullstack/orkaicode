@@ -2,11 +2,12 @@ import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { Installation } from "../../installation"
+import { Distribution } from "../../distribution"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 
 export const UpgradeCommand = {
-  command: "upgrade [target]",
-  describe: "upgrade opencode to the latest or a specific version",
+  command: "upgrade|update [target]",
+  describe: "upgrade opencode from elfullstack/orkaicode GitHub releases",
   builder: (yargs: Argv) => {
     return yargs
       .positional("target", {
@@ -15,7 +16,7 @@ export const UpgradeCommand = {
       })
       .option("method", {
         alias: "m",
-        describe: "installation method to use",
+        describe: "ignored for this distribution; releases are downloaded from GitHub",
         type: "string",
         choices: ["curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"],
       })
@@ -25,24 +26,6 @@ export const UpgradeCommand = {
     UI.println(UI.logo("  "))
     UI.empty()
     prompts.intro("Upgrade")
-    const detectedMethod = await Installation.method()
-    const method = (args.method as Installation.Method) ?? detectedMethod
-    if (method === "unknown") {
-      prompts.log.error(`opencode is installed to ${process.execPath} and may be managed by a package manager`)
-      const install = await prompts.select({
-        message: "Install anyways?",
-        options: [
-          { label: "Yes", value: true },
-          { label: "No", value: false },
-        ],
-        initialValue: false,
-      })
-      if (!install) {
-        prompts.outro("Done")
-        return
-      }
-    }
-    prompts.log.info("Using method: " + method)
     const target = args.target ? args.target.replace(/^v/, "") : await Installation.latest()
 
     if (InstallationVersion === target) {
@@ -52,18 +35,14 @@ export const UpgradeCommand = {
     }
 
     prompts.log.info(`From ${InstallationVersion} → ${target}`)
+    prompts.log.info(`Source: ${Distribution.releasesUrl}`)
     const spinner = prompts.spinner()
     spinner.start("Upgrading...")
-    const err = await Installation.upgrade(method, target).catch((err) => err)
+    const err = await Installation.upgrade("unknown", target).catch((err) => err)
     if (err) {
       spinner.stop("Upgrade failed", 1)
       if (err instanceof Installation.UpgradeFailedError) {
-        // necessary because choco only allows install/upgrade in elevated terminals
-        if (method === "choco" && err.stderr.includes("not running from an elevated command shell")) {
-          prompts.log.error("Please run the terminal as Administrator and try again")
-        } else {
-          prompts.log.error(err.stderr)
-        }
+        prompts.log.error(err.stderr)
       } else if (err instanceof Error) prompts.log.error(err.message)
       prompts.outro("Done")
       return

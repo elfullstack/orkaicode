@@ -40,7 +40,6 @@ export async function upgrade() {
     return
   }
 
-  if (method === "unknown") return
   await Installation.upgrade(method, latest)
     .then(() =>
       GlobalBus.emit("event", {
