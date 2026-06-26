@@ -26,6 +26,12 @@ describe("orkai prompt", () => {
     expect(block).toContain("session summary")
   })
 
+  test("primaryBlock mandates overview when context is missing", () => {
+    const block = primaryBlock(undefined)
+    expect(block).toContain("## Orkai Session Context")
+    expect(block).toContain("orkai_overview")
+  })
+
   test("agent routing", () => {
     expect(OrkaiPrompt.primary({ name: "build" } as never)).toBe(true)
     expect(OrkaiPrompt.primary({ name: "explore" } as never)).toBe(false)
@@ -39,7 +45,16 @@ describe("orkai prompt", () => {
     delete process.env.OPENCODE_DISABLE_ORKAI
   })
 
-  test("task awareness mentions semantic search", () => {
-    expect(TASK_AWARENESS).toContain("orkai_search_code")
+  test("sessionStartSection omits empty bodies", () => {
+    expect(OrkaiPrompt.sessionStartSection("Overview", "")).toBeUndefined()
+    expect(OrkaiPrompt.sessionStartSection("Overview", "hello")).toContain("### Overview")
+  })
+
+  test("SESSION_START_REMINDER mentions overview", () => {
+    expect(OrkaiPrompt.SESSION_START_REMINDER).toContain("orkai_overview")
+  })
+
+  test("SESSION_START_REMINDER mentions category_ids", () => {
+    expect(OrkaiPrompt.SESSION_START_REMINDER).toContain("category_ids")
   })
 })

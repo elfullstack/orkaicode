@@ -4,10 +4,12 @@ import { InstanceState } from "@/effect/instance-state"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Context, Effect, Layer } from "effect"
 import { OrkaiPrompt } from "./prompt"
+import { errorMessage } from "@/util/error"
 
 export interface Interface {
   readonly get: () => Effect.Effect<string | undefined>
   readonly invalidate: () => Effect.Effect<void>
+  readonly refresh: () => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/OrkaiContext") {}
@@ -21,7 +23,14 @@ export const layer = Layer.effect(
       Effect.fn("OrkaiContext.load")(function* (ctx) {
         const cfg = yield* config.get()
         return yield* OrkaiPrompt.prefetch({ directory: ctx.directory, config: cfg, fs: fsys }).pipe(
-          Effect.catch(() => Effect.succeed(undefined)),
+            Effect.catch((cause) =>
+              Effect.gen(function* () {
+                yield* Effect.logWarning("orkai session start prefetch failed", {
+                  error: errorMessage(cause),
+                })
+                return undefined
+              }),
+            ),
         )
       }),
     )
@@ -32,6 +41,10 @@ export const layer = Layer.effect(
       }),
       invalidate: Effect.fn("OrkaiContext.invalidate")(function* () {
         yield* InstanceState.invalidate(cache)
+      }),
+      refresh: Effect.fn("OrkaiContext.refresh")(function* () {
+        yield* InstanceState.invalidate(cache)
+        return yield* InstanceState.get(cache)
       }),
     })
   }),

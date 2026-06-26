@@ -46,6 +46,7 @@ export function provider(model: Provider.Model) {
 export interface Interface {
   readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
   readonly orkai: (agent: Agent.Info) => Effect.Effect<string | undefined>
+  readonly refreshOrkai: () => Effect.Effect<string | undefined>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly mcp: (agent: Agent.Info, permission?: PermissionV1.Ruleset) => Effect.Effect<string | undefined>
 }
@@ -113,6 +114,10 @@ export const layer = Layer.effect(
         }
         if (OrkaiPrompt.task(agent)) return OrkaiPrompt.TASK_AWARENESS
         return undefined
+      }),
+
+      refreshOrkai: Effect.fn("SystemPrompt.refreshOrkai")(function* () {
+        return yield* orkaiContext.refresh()
       }),
 
       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {

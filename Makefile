@@ -1,11 +1,15 @@
 .PHONY: build clean
 
-# Extra flags passed to packages/opencode/script/build.ts (e.g. --skip-embed-web-ui)
+# Optional enable flags for script/build.ts (e.g. --sourcemaps, --baseline).
+# Embedded web UI is off by default; enable with EMBED_WEB_UI=1.
 BUILD_FLAGS ?=
+EMBED_WEB_UI ?=
+
+SKIP_EMBED := $(if $(EMBED_WEB_UI),,--skip-embed-web-ui)
 
 # Compile a standalone opencode binary for the current platform and copy it to ./bin/opencode
 build:
-	bun run --cwd packages/opencode build -- --single $(BUILD_FLAGS)
+	bun run --cwd packages/opencode build -- --single $(SKIP_EMBED) $(BUILD_FLAGS)
 	mkdir -p bin
 	cp "$$(find packages/opencode/dist -path '*/bin/opencode' -type f | head -1)" bin/opencode
 	chmod +x bin/opencode

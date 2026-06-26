@@ -14,6 +14,8 @@ import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
+import { OrkaiPrompt, SESSION_START_REMINDER } from "@/orkai/prompt"
+import { errorMessage } from "@/util/error"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import { MAX_STEPS_PROMPT } from "@opencode-ai/core/session/runner/max-steps"
@@ -1233,13 +1235,14 @@ export const layer = Layer.effect(
           }
 
           step++
-          if (step === 1)
+          if (step === 1) {
             yield* title({
               session,
               modelID: lastUser.model.modelID,
               providerID: lastUser.model.providerID,
               history: msgs,
             }).pipe(Effect.ignore, Effect.forkIn(scope))
+          }
 
           const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
@@ -1278,6 +1281,17 @@ export const layer = Layer.effect(
             yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
             throw error
           }
+          const isSessionStart = !msgs.some((msg) => msg.info.role === "assistant")
+          const cfg = yield* config.get()
+          if (isSessionStart && OrkaiPrompt.active(cfg)) {
+            yield* sys.refreshOrkai().pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("orkai session start refresh failed", {
+                  error: errorMessage(cause),
+                }),
+              ),
+            )
+          }
           const maxSteps = agent.steps ?? Infinity
           const isLastStep = step >= maxSteps
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
@@ -1285,6 +1299,19 @@ export const layer = Layer.effect(
             Effect.provideService(FSUtil.Service, fsys),
             Effect.provideService(Session.Service, sessions),
           )
+
+          if (isSessionStart && OrkaiPrompt.active(cfg) && OrkaiPrompt.primary(agent)) {
+            const reminder = yield* sessions.updatePart({
+              id: PartID.ascending(),
+              messageID: lastUser.id,
+              sessionID,
+              type: "text",
+              text: SESSION_START_REMINDER,
+              synthetic: true,
+            })
+            const userMessage = msgs.findLast((msg) => msg.info.role === "user")
+            if (userMessage) userMessage.parts.push(reminder)
+          }
 
           const msg: SessionV1.Assistant = {
             id: MessageID.ascending(),

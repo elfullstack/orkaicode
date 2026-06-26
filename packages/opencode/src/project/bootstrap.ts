@@ -11,7 +11,9 @@ import { Effect, Layer } from "effect"
 import { ChildProcessSpawner } from "effect/unstable/process"
 import { Config } from "@/config/config"
 import { OrkaiValidate } from "@/orkai/validate"
+import { OrkaiContext } from "@/orkai/context"
 import { ValidationFailedError } from "@/orkai/error"
+import { errorMessage } from "@/util/error"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Service } from "./bootstrap-service"
@@ -35,6 +37,7 @@ export const layer = Layer.effect(
     const vcs = yield* Vcs.Service
     const fs = yield* FSUtil.Service
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const orkaiContext = yield* OrkaiContext.Service
 
     const run = Effect.gen(function* () {
       const ctx = yield* InstanceState.context
@@ -49,6 +52,13 @@ export const layer = Layer.effect(
                 reason: "orkai validation failed",
                 hint: cause instanceof Error ? cause.message : String(cause),
               }),
+        ),
+      )
+      yield* orkaiContext.refresh().pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("orkai session start warm failed at bootstrap", {
+            error: errorMessage(cause),
+          }),
         ),
       )
       // Plugin can mutate config so it has to be initialized before anything else.
@@ -78,6 +88,7 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
     Vcs.defaultLayer,
     CrossSpawnSpawner.defaultLayer,
     FSUtil.defaultLayer,
+    OrkaiContext.defaultLayer,
   ]),
 )
 
@@ -95,6 +106,7 @@ export const node = LayerNode.make({
     Vcs.node,
     CrossSpawnSpawner.node,
     FSUtil.node,
+    OrkaiContext.node,
   ],
 })
 
