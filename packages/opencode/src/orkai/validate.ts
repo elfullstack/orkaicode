@@ -7,6 +7,7 @@ import { ValidationFailedError } from "./error"
 import { credentialsPath, runtimePath } from "./credentials"
 import { disabled, resolveEndpointFromFiles } from "./mcp"
 import { parseProjectYaml } from "./project-config"
+import { OrkaiWorkflows } from "./workflows"
 import type { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 
 const PROJECT_FILE = ".orkai.yaml"
@@ -122,6 +123,13 @@ export const validate = Effect.fn("Orkai.validate")(function* (input: {
       `Fix or delete ${path.relative(input.directory, projectFile) || PROJECT_FILE} and run \`orkai init\`.`,
     )
   }
+
+  yield* OrkaiWorkflows.seed({
+    directory: input.directory,
+    config: input.config,
+    fs: input.fs,
+    endpoint,
+  })
 })
 
 export * as OrkaiValidate from "./validate"

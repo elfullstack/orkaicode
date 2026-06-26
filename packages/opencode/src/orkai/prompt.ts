@@ -24,6 +24,12 @@ You have persistent memory via orkai (MCP server \`orkai\`). Use it proactively 
 - **Multi-step work**: persist plan → milestone → tasks via \`orkai_plan\`, \`orkai_milestone\`, \`orkai_tasks\` before large implementations.
 - **Workflows**: \`orkai_workflow\` search/get for repeatable practices matching the task.
 
+## Workflow enforcement (NON-NEGOTIABLE)
+- Before non-trivial work, search \`orkai_workflow\` for a matching practice (built-ins: **Orkai Session Start**, **Orkai Planning**, **Orkai Session Save**).
+- If a match exists, follow its steps — do not improvise a different process.
+- If no match, propose creating a workflow via \`orkai_workflow\` create before proceeding.
+- Deviation requires explicit user approval.
+
 ## Session end
 - When the user signals wrap-up, offer to save a session summary via \`orkai_session\` create.
 - Suggest \`orkai index\` if source files changed materially.
