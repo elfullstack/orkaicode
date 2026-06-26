@@ -8,7 +8,12 @@ import * as Vcs from "./vcs"
 import { InstanceState } from "@/effect/instance-state"
 import { ShareNext } from "@/share/share-next"
 import { Effect, Layer } from "effect"
+import { ChildProcessSpawner } from "effect/unstable/process"
 import { Config } from "@/config/config"
+import { OrkaiValidate } from "@/orkai/validate"
+import { ValidationFailedError } from "@/orkai/error"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Service } from "./bootstrap-service"
 
 export { Service } from "./bootstrap-service"
@@ -28,12 +33,24 @@ export const layer = Layer.effect(
     const shareNext = yield* ShareNext.Service
     const snapshot = yield* Snapshot.Service
     const vcs = yield* Vcs.Service
+    const fs = yield* FSUtil.Service
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
     const run = Effect.gen(function* () {
       const ctx = yield* InstanceState.context
       yield* Effect.logInfo("bootstrapping", { directory: ctx.directory })
       // everything depends on config so eager load it for nice traces
-      yield* config.get()
+      const cfg = yield* config.get()
+      yield* OrkaiValidate.validate({ directory: ctx.directory, config: cfg, fs, spawner }).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof ValidationFailedError
+            ? cause
+            : new ValidationFailedError({
+                reason: "orkai validation failed",
+                hint: cause instanceof Error ? cause.message : String(cause),
+              }),
+        ),
+      )
       // Plugin can mutate config so it has to be initialized before anything else.
       yield* plugin.init()
       // Each service self-manages its own slow work via Effect.forkScoped against
@@ -45,7 +62,7 @@ export const layer = Layer.effect(
       ).pipe(Effect.withSpan("InstanceBootstrap.init"))
     }).pipe(Effect.withSpan("InstanceBootstrap"))
 
-    return Service.of({ run })
+    return Service.of({ run: run as Effect.Effect<void> })
   }),
 )
 
@@ -59,13 +76,26 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
     ShareNext.defaultLayer,
     Snapshot.defaultLayer,
     Vcs.defaultLayer,
+    CrossSpawnSpawner.defaultLayer,
+    FSUtil.defaultLayer,
   ]),
 )
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Format.node, LSP.node, Plugin.node, Project.node, ShareNext.node, Snapshot.node, Vcs.node],
+  deps: [
+    Config.node,
+    Format.node,
+    LSP.node,
+    Plugin.node,
+    Project.node,
+    ShareNext.node,
+    Snapshot.node,
+    Vcs.node,
+    CrossSpawnSpawner.node,
+    FSUtil.node,
+  ],
 })
 
 export * as InstanceBootstrap from "./bootstrap"

@@ -35,6 +35,7 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+import { disabled as orkaiDisabled, inject as injectOrkaiMcp, paths as orkaiPaths, resolveEndpointFromFiles } from "@/orkai/mcp"
 
 // Custom merge function that concatenates array fields instead of replacing them
 // Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
@@ -580,6 +581,14 @@ export const layer = Layer.effect(
         }
         if (Flag.OPENCODE_DISABLE_PRUNE) {
           result.compaction = { ...result.compaction, prune: false }
+        }
+
+        if (!orkaiDisabled(result)) {
+          const endpoint = resolveEndpointFromFiles({
+            credentials: yield* fs.readFileStringSafe(orkaiPaths.credentials()),
+            runtime: yield* fs.readFileStringSafe(orkaiPaths.runtime()),
+          })
+          if (endpoint) result = injectOrkaiMcp(result, endpoint)
         }
 
         return {

@@ -1,0 +1,28 @@
+# .orkai.yaml — project configuration for Orkai
+# See: orkai index --help
+project:
+    name: opencode
+    category_id: 025e47eee88d12b7dafcd188765f0c19
+index:
+    type: all
+    path: .
+    code:
+        skip_tests: true
+    documents:
+        extensions:
+            - .md
+            - .pdf
+            - .docx
+    analytics:
+        enabled: true
+        paths:
+            - .
+        extensions:
+            - .csv
+            - .xlsx
+            - .parquet
+        validation:
+            require_header: true
+            min_rows: 1
+            max_columns: 0
+        fallback: skip

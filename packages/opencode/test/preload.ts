@@ -86,6 +86,9 @@ delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
 // Use in-memory sqlite
 process.env["OPENCODE_DB"] = ":memory:"
 
+// Orkai integration is opt-in during tests; orkai-specific tests enable it explicitly.
+process.env["OPENCODE_DISABLE_ORKAI"] = "1"
+
 // Now safe to import from src/
 const { initProjectors } = await import("../src/server/projectors")
 
