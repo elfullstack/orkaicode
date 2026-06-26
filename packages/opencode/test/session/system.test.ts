@@ -1,7 +1,10 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import type { Agent } from "../../src/agent/agent"
+import { Config } from "../../src/config/config"
+import { OrkaiContext } from "../../src/orkai/context"
 import { NamedError } from "@opencode-ai/core/util/error"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
 import { SystemPrompt } from "../../src/session/system"
@@ -45,6 +48,13 @@ const build: Agent.Info = {
 const it = testEffect(
   SystemPrompt.layer.pipe(
     Layer.provide(LocationServiceMap.layer),
+    Layer.provide(FSUtil.defaultLayer),
+    Layer.provide(OrkaiContext.defaultLayer),
+    Layer.provide(
+      Layer.mock(Config.Service, {
+        get: () => Effect.succeed({}),
+      }),
+    ),
     Layer.provide(
       Layer.mock(MCP.Service, {
         instructions: () =>

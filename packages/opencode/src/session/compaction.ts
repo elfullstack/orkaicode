@@ -11,6 +11,9 @@ import { Agent } from "@/agent/agent"
 import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
+import { OrkaiContext } from "@/orkai/context"
+import { OrkaiSession } from "@/orkai/session"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 
 import { Effect, Layer, Context } from "effect"
 import * as DateTime from "effect/DateTime"
@@ -167,6 +170,8 @@ export const layer = Layer.effect(
     const provider = yield* Provider.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const fsys = yield* FSUtil.Service
+    const orkaiContext = yield* OrkaiContext.Service
 
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
       tokens: SessionV1.Assistant["tokens"]
@@ -539,6 +544,21 @@ export const layer = Layer.effect(
               recent,
             })
         }
+        if (summary) {
+          const sessionInfo = yield* session.get(input.sessionID).pipe(
+            Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed(undefined)),
+          )
+          yield* OrkaiSession.saveCompactSummary({
+            directory: ctx.directory,
+            config: cfg,
+            fs: fsys,
+            summary,
+            sessionID: input.sessionID,
+            title: sessionInfo?.title ?? "Session",
+            auto: input.auto,
+          })
+          yield* orkaiContext.invalidate()
+        }
         yield* events.publish(Event.Compacted, { sessionID: input.sessionID })
       }
       return result
@@ -594,6 +614,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Agent.defaultLayer),
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Config.defaultLayer),
+    Layer.provide(FSUtil.defaultLayer),
+    Layer.provide(OrkaiContext.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
     Layer.provide(EventV2Bridge.defaultLayer),
   ),
@@ -609,6 +631,8 @@ export const node = LayerNode.make({
     Plugin.node,
     SessionProcessor.node,
     Provider.node,
+    FSUtil.node,
+    OrkaiContext.node,
     EventV2Bridge.node,
     RuntimeFlags.node,
   ],

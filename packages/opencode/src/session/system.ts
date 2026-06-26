@@ -21,6 +21,10 @@ import { Location } from "@opencode-ai/core/location"
 import { LocationServiceMap } from "@opencode-ai/core/location-layer"
 import { Reference } from "@opencode-ai/core/reference"
 import { MCP } from "@/mcp"
+import { Config } from "@/config/config"
+import { OrkaiContext } from "@/orkai/context"
+import { OrkaiPrompt } from "@/orkai/prompt"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 
 export function provider(model: Provider.Model) {
@@ -41,6 +45,7 @@ export function provider(model: Provider.Model) {
 
 export interface Interface {
   readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
+  readonly orkai: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly mcp: (agent: Agent.Info, permission?: PermissionV1.Ruleset) => Effect.Effect<string | undefined>
 }
@@ -52,11 +57,16 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const skill = yield* Skill.Service
     const mcp = yield* MCP.Service
+    const config = yield* Config.Service
+    const fsys = yield* FSUtil.Service
+    const orkaiContext = yield* OrkaiContext.Service
     const locations = yield* LocationServiceMap
 
     return Service.of({
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
         const ctx = yield* InstanceState.context
+        const cfg = yield* config.get()
+        const orkaiEnv = yield* OrkaiPrompt.environment({ directory: ctx.directory, config: cfg, fs: fsys })
         const references = yield* Effect.gen(function* () {
           return (yield* (yield* Reference.Service).list()).filter((reference) => reference.description !== undefined)
         }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
@@ -70,6 +80,7 @@ export const layer = Layer.effect(
             `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
             `  Platform: ${process.platform}`,
             `  Today's date: ${new Date().toDateString()}`,
+            ...orkaiEnv.map((line) => `  ${line}`),
             `</env>`,
           ].join("\n"),
           references.length === 0
@@ -91,6 +102,17 @@ export const layer = Layer.effect(
                 "</available_references>",
               ].join("\n"),
         ].filter((part): part is string => part !== undefined)
+      }),
+
+      orkai: Effect.fn("SystemPrompt.orkai")(function* (agent: Agent.Info) {
+        const cfg = yield* config.get()
+        if (!OrkaiPrompt.active(cfg)) return undefined
+        if (OrkaiPrompt.primary(agent)) {
+          const context = yield* orkaiContext.get()
+          return OrkaiPrompt.primaryBlock(context)
+        }
+        if (OrkaiPrompt.task(agent)) return OrkaiPrompt.TASK_AWARENESS
+        return undefined
       }),
 
       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {
@@ -131,6 +153,9 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(Skill.defaultLayer),
   Layer.provide(MCP.defaultLayer),
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(FSUtil.defaultLayer),
+  Layer.provide(OrkaiContext.defaultLayer),
   Layer.provide(LocationServiceMap.layer),
 )
 
@@ -139,7 +164,7 @@ const locationServiceMapNode = LayerNode.make({ service: Service, layer: Locatio
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Skill.node, MCP.node, locationServiceMapNode],
+  deps: [Skill.node, MCP.node, Config.node, FSUtil.node, OrkaiContext.node, locationServiceMapNode],
 })
 
 export * as SystemPrompt from "./system"

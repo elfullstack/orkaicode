@@ -34,6 +34,13 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LLMEvent, Usage } from "@opencode-ai/llm"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { OrkaiContext } from "../../src/orkai/context"
+
+const orkaiContext = Layer.mock(OrkaiContext.Service, {
+  get: () => Effect.succeed(undefined),
+  invalidate: () => Effect.void,
+})
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -232,6 +239,8 @@ const deps = Layer.mergeAll(
   Plugin.defaultLayer,
   EventV2Bridge.defaultLayer,
   Config.defaultLayer,
+  FSUtil.defaultLayer,
+  orkaiContext,
   RuntimeFlags.layer({ experimentalEventSystem: true }),
   Database.defaultLayer,
   EventV2Bridge.defaultLayer,
@@ -289,6 +298,8 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     Layer.provide(status),
     Layer.provide(events),
     Layer.provide(options?.config ?? Config.defaultLayer),
+    Layer.provide(FSUtil.defaultLayer),
+    Layer.provide(orkaiContext),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provide(EventV2Bridge.defaultLayer),
   )

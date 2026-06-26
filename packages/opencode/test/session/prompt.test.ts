@@ -43,6 +43,7 @@ import { SessionV2 } from "@opencode-ai/core/session"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
+import { OrkaiContext } from "../../src/orkai/context"
 import { Shell } from "@opencode-ai/core/shell"
 import { Snapshot } from "../../src/snapshot"
 import { ToolRegistry } from "@/tool/registry"
@@ -213,6 +214,8 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
           Layer.provideMerge(deps),
         )
   const compact = SessionCompaction.layer.pipe(
+    Layer.provide(FSUtil.defaultLayer),
+    Layer.provide(OrkaiContext.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
@@ -231,6 +234,8 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
       SystemPrompt.layer.pipe(
         Layer.provide(Skill.defaultLayer),
         Layer.provide(LocationServiceMap.layer),
+        Layer.provide(FSUtil.defaultLayer),
+        Layer.provide(OrkaiContext.defaultLayer),
         Layer.provide(deps),
       ),
     ),
